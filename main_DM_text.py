@@ -13,7 +13,7 @@ from utils_text import get_loops, get_dataset, get_network, get_eval_pool, evalu
 def main():
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
-    parser.add_argument('--dataset', type=str, default='CIFAR10', help='dataset')
+    parser.add_argument('--dataset', type=str, default='SST2', help='dataset')
     parser.add_argument('--model', type=str, default='LSTMNet', help='model')
     parser.add_argument('--ipc', type=int, default=50, help='image(s) per class')
     parser.add_argument('--eval_mode', type=str, default='SS', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
