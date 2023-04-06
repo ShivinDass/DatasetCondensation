@@ -39,11 +39,15 @@ class LSTMNet(nn.Module):
         self.lstm = nn.LSTM(input_size = embed_dim, hidden_size = hidden_dim, batch_first = True)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.LeakyReLU(0.2),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
+            nn.LayerNorm(hidden_dim),
         )
-        self.classifier = nn.Linear(hidden_dim, num_classes)
+        self.classifier = nn.Sequential(
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_dim, num_classes)
+        )
 
     def forward(self, x):
         _, (h_n, _) = self.lstm(x)

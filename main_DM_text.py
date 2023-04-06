@@ -20,9 +20,9 @@ def main():
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
     parser.add_argument('--num_eval', type=int, default=20, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=1000, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
-    parser.add_argument('--Iteration', type=int, default=20000, help='training iterations')
+    parser.add_argument('--Iteration', type=int, default=10000, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=1.0, help='learning rate for updating synthetic images')
-    parser.add_argument('--lr_net', type=float, default=0.01, help='learning rate for updating network parameters')
+    parser.add_argument('--lr_net', type=float, default=0.001, help='learning rate for updating network parameters')
     parser.add_argument('--batch_real', type=int, default=256, help='batch size for real data')
     parser.add_argument('--batch_train', type=int, default=256, help='batch size for training networks')
     parser.add_argument('--init', type=str, default='real', help='noise/real: initialize synthetic images from random noise or randomly sampled real images.')
@@ -158,8 +158,8 @@ def main():
 
             loss_avg /= (num_classes)
 
-            if it%10 == 0:
-                print('%s iter = %05d, loss = %.4f' % (get_time(), it, loss_avg))
+            if it%100 == 0:
+                print('%s iter = %05d, loss = %.8f' % (get_time(), it, loss_avg))
 
             if it == args.Iteration: # only record the final results
                 data_save.append([copy.deepcopy(data_syn.detach().cpu()), copy.deepcopy(label_syn.detach().cpu())])

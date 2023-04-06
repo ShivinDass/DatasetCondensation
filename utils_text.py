@@ -11,8 +11,14 @@ from torchvision import datasets, transforms
 from scipy.ndimage.interpolation import rotate as scipyrotate
 from networks import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN, LSTMNet
 from sentence_transformers import SentenceTransformer, InputExample, losses, models, datasets, evaluation
+
+import nltk
+nltk.download('stopwords')
+nltk.download('punkt')
 from nltk.stem import PorterStemmer
-import gensim.downloader
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+import gensim.downloader as api
 import re
 
 def set_seed(seed):
@@ -49,39 +55,34 @@ def get_dataset(dataset, data_path):
         text_col=train_df.columns.values[0] 
         category_col=train_df.columns.values[1]
 
+        x_train = train_df[text_col].values.tolist()
+        y_train = train_df[category_col].values.tolist()
         x_eval = eval_df[text_col].values.tolist()
         y_eval = eval_df[category_col].values.tolist()
 
-        st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
-        num_training = 64 #@param ["8", "16", "32", "54", "128", "256", "512"] {type:"raw"}
-        # embedding_size = 768
-        embedding_size = 25 #as glove twitter has 25 size
         max_sentence_len = 25
-        
-        set_seed(0)
-        train_df_sample = train_df
-        x_train = train_df_sample[text_col].values.tolist()
-        y_train = train_df_sample[category_col].values.tolist()
-        #add pickle file for glove_vectors here
-        glove_vectors = gensim.downloader.load('glove-twitter-25')
-        x_train_word_embeddings = word_embedding_from_text_set(x_train,glove_vectors,max_sentence_len)
-        x_eval_word_embeddings = word_embedding_from_text_set(x_eval,glove_vectors,max_sentence_len)
+    
+        ### Word2Vec encoded vecors ###
+        w2v = api.load("word2vec-google-news-300")
+        x_train = word_embedding_from_text_set(x_train, w2v)
+        x_eval = word_embedding_from_text_set(x_eval, w2v)
+        embedding_size = 300
+        ###############################
 
-        x_train_tensor = torch.tensor(x_train_word_embeddings)
-        x_eval_tensor = torch.tensor(x_eval_word_embeddings)
+        ### Sentence Context encoded vectors ###
+        # st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
+        # orig_model = SentenceTransformer(st_model)
+        # x_train = orig_model.encode(x_train, output_value='token_embeddings')
+        # x_eval = orig_model.encode(x_eval, output_value='token_embeddings')
+        # embedding_size = 768
+        ########################################
         
-        """
-        #Shivin's Part: Sentence Context encoded vectors
-        orig_model = SentenceTransformer(st_model)
-        X_train_noFT = orig_model.encode(x_train, output_value='token_embeddings')
-        X_eval_noFT = orig_model.encode(x_eval, output_value='token_embeddings')
-        print(len(X_train_noFT))
-        print(len(X_eval_noFT))
-        
-        x_train_tensor = nn.utils.rnn.pad_sequence(X_train_noFT, batch_first=True)[:, :max_sentence_len, :]
-        x_eval_tensor = nn.utils.rnn.pad_sequence(X_eval_noFT, batch_first=True)[:, :max_sentence_len, :]
-        """
+        print("Train size:", len(x_train))
+        print("Test size:", len(x_eval))
 
+        x_train_tensor = nn.utils.rnn.pad_sequence(x_train, batch_first=True)[:, :max_sentence_len, :]
+        x_eval_tensor = nn.utils.rnn.pad_sequence(x_eval, batch_first=True)[:, :max_sentence_len, :]
+        
         dst_train = TensorDataset(torch.Tensor(x_train_tensor),torch.Tensor(y_train).long()) 
         dst_test = TensorDataset(torch.Tensor(x_eval_tensor),torch.Tensor(y_eval).long()) 
 
@@ -89,43 +90,33 @@ def get_dataset(dataset, data_path):
         exit('unknown dataset: %s'%dataset)
 
     #batch size changed form 256 to 16
-    testloader = torch.utils.data.DataLoader(dst_test, batch_size=16, shuffle=True,drop_last=True)
+    testloader = torch.utils.data.DataLoader(dst_test, batch_size=256, shuffle=True,drop_last=True)
     return embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader
 
-# if __name__ == '__main__':
-#     embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('SST2', "")
-
-def word_embedding_from_text_set(train_set,glove_vectors,max_word_len):
-    clean_txt = []
+def word_embedding_from_text_set(train_set, vectors):
+    sp = set(stopwords.words('english'))
+    corpus = []
     for x in train_set:
         desc = x.lower()
         desc = re.sub('[^a-zA-Z]', ' ', desc)
-        desc=re.sub("&lt;/?.*?&gt;"," &lt;&gt; ",desc)
-        desc=re.sub("(\\d|\\W)+"," ",desc)
-        clean_txt.append(desc)
-    
-    corpus = []
-    for col in clean_txt:
-        word_list = col.split(" ")
-        corpus.append(word_list)
+        desc = re.sub("&lt;/?.*?&gt;"," &lt;&gt; ",desc)
+        desc = re.sub("(\\d|\\W)+"," ",desc)
+        corpus.append(word_tokenize(desc))
 
-    ps = PorterStemmer()
-    glove_embedded_train_set = [[] for i in range(len(corpus))]
+    embedded_train_set = []
     for i in range(len(corpus)):
+        embedded_sentence = []
         for j in range(len(corpus[i])):
-            if j<max_word_len:
-                corpus[i][j] = ps.stem(corpus[i][j])
-                if glove_vectors.__contains__(corpus[i][j]):
-                    glove_embedded_train_set[i].append(glove_vectors[corpus[i][j]])
-                else:
-                    glove_embedded_train_set[i].append(glove_vectors['unk'])
+            # if corpus[i][j] in sp:
+            #     continue
+            if vectors.__contains__(corpus[i][j]):
+                embedded_sentence.append(vectors[corpus[i][j]])
+            # else:
+            #     embedded_sentence.append(vectors['unk'])
+        if len(embedded_sentence) > 0:
+            embedded_train_set.append(torch.tensor(np.array(embedded_sentence)))
         
-        if max_word_len>len(corpus[i]):
-            num_pad = max_word_len-len(corpus[i])
-            for pad in range(num_pad):
-                glove_embedded_train_set[i].append(glove_vectors['pad'])
-
-    return glove_embedded_train_set
+    return embedded_train_set
 
 class TensorDataset(Dataset):
     def __init__(self, data, labels):
@@ -151,7 +142,7 @@ def get_network(model, embed_dim, num_classes):
     # net_width, net_depth, net_act, net_norm, net_pooling = get_default_convnet_setting()
 
     if model == 'LSTMNet':
-        net = LSTMNet(embed_dim = embed_dim, hidden_dim = 128, num_classes = num_classes)
+        net = LSTMNet(embed_dim = embed_dim, hidden_dim = 256, num_classes = num_classes)
 
     else:
         net = None
@@ -604,3 +595,6 @@ AUGMENT_FNS = {
     'rotate': [rand_rotate],
 }
 
+
+if __name__ == '__main__':
+    embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('SST2', "")
