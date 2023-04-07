@@ -30,6 +30,25 @@ class MLP(nn.Module):
         out = self.fc_3(out)
         return out
 
+class MLPV2(nn.Module):
+    def __init__(self, embed_dim, hidden_dim, num_classes):
+        super(MLPV2, self).__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+        )
+        self.classifier = nn.Linear(hidden_dim, num_classes)
+    
+    def forward(self, x):
+        out = self.mlp(x)
+        out = self.classifier(out)
+        return out
+
+    def embed(self, x):
+        return self.mlp(x)
+
 class LSTMNet(nn.Module):
     def __init__(self, embed_dim, hidden_dim, num_classes):
         super(LSTMNet, self).__init__()
