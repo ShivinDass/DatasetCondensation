@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 from scipy.ndimage.interpolation import rotate as scipyrotate
-from networks import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN, LSTMNet
+from networks import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN, LSTMNet, MLPV2
 from sentence_transformers import SentenceTransformer, InputExample, losses, models, datasets, evaluation
 
 import nltk
@@ -20,6 +20,9 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import gensim.downloader as api
 import re
+
+SST_DATASETS = ["SST1-w2v", "SST1-glove", "SST1-transformer", "SST1-w2v-flat", "SST1-glove-flat", "SST1-transformer-flat", \
+                    "SST2-w2v", "SST2-glove", "SST2-transformer", "SST2-w2v-flat", "SST2-glove-flat", "SST2-transformer-flat"]
 
 def set_seed(seed):
   random.seed(seed)
@@ -43,14 +46,20 @@ def get_dataset(dataset, data_path):
         dst_train = TensorDataset(train_data, train_labels)
         dst_test = TensorDataset(test_data, test_labels)
     
-    elif dataset == "SST2":
-        train_df = pd.read_csv('https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/train.tsv', delimiter='\t', header=None)
-        eval_df = pd.read_csv('https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/test.tsv', delimiter='\t', header=None)
+    elif dataset in SST_DATASETS:
+        if "SST2" in dataset:
+            train_df = pd.read_csv('https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/train.tsv', delimiter='\t', header=None)
+            eval_df = pd.read_csv('https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/test.tsv', delimiter='\t', header=None)
+            num_classes = 2
+            class_names = ['negative', 'positive']
 
-        num_classes = 2
-        class_name = ['negative', 'positive']
+        elif "SST1" in dataset:
+            train_df = pd.read_csv('https://raw.githubusercontent.com/gauravnuti/Text_Dataset_Condensation/master/data/SST1/train_SST1.tsv', delimiter='\t', header=None)
+            eval_df = pd.read_csv('https://raw.githubusercontent.com/gauravnuti/Text_Dataset_Condensation/master/data/SST1/test_SST1.tsv', delimiter='\t', header=None)
+            num_classes = 5
+            class_names = ['very_negative', 'negative', 'neutral', 'positive', 'very_positive']
 
-        class_names = class_name
+        max_sentence_len = 30
 
         text_col=train_df.columns.values[0] 
         category_col=train_df.columns.values[1]
@@ -60,22 +69,32 @@ def get_dataset(dataset, data_path):
         x_eval = eval_df[text_col].values.tolist()
         y_eval = eval_df[category_col].values.tolist()
 
-        max_sentence_len = 25
-    
         ### Word2Vec encoded vecors ###
-        w2v = api.load("word2vec-google-news-300")
-        x_train = word_embedding_from_text_set(x_train, w2v)
-        x_eval = word_embedding_from_text_set(x_eval, w2v)
-        embedding_size = 300
-        ###############################
+        if 'w2v' in dataset:
+            embed_model = api.load("word2vec-google-news-300")
+            embedding_size = 300
 
-        ### Sentence Context encoded vectors ###
-        # st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
-        # orig_model = SentenceTransformer(st_model)
-        # x_train = orig_model.encode(x_train, output_value='token_embeddings')
-        # x_eval = orig_model.encode(x_eval, output_value='token_embeddings')
-        # embedding_size = 768
-        ########################################
+            x_train = word_embedding_from_text_set(x_train, embed_model)
+            x_eval = word_embedding_from_text_set(x_eval, embed_model)
+
+        elif 'glove' in dataset:
+            embed_model = api.load('glove-twitter-25')
+            embedding_size = 25
+
+            x_train = word_embedding_from_text_set(x_train, embed_model)
+            x_eval = word_embedding_from_text_set(x_eval, embed_model)
+
+        elif 'transformer' in dataset:
+            st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
+            orig_model = SentenceTransformer(st_model)
+            embedding_size = 768
+
+            x_train = orig_model.encode(x_train, output_value='token_embeddings')
+            x_eval = orig_model.encode(x_eval, output_value='token_embeddings')
+
+        else:
+            exit('unknown dataset: %s'%dataset)
+
         
         print("Train size:", len(x_train))
         print("Test size:", len(x_eval))
@@ -83,6 +102,12 @@ def get_dataset(dataset, data_path):
         x_train_tensor = nn.utils.rnn.pad_sequence(x_train, batch_first=True)[:, :max_sentence_len, :]
         x_eval_tensor = nn.utils.rnn.pad_sequence(x_eval, batch_first=True)[:, :max_sentence_len, :]
         
+        if 'flat' in dataset:
+            x_train_tensor = x_train_tensor.reshape(-1, max_sentence_len * embedding_size)
+            x_eval_tensor = x_eval_tensor.reshape(-1, max_sentence_len * embedding_size)
+
+            embedding_size = max_sentence_len * embedding_size
+
         dst_train = TensorDataset(torch.Tensor(x_train_tensor),torch.Tensor(y_train).long()) 
         dst_test = TensorDataset(torch.Tensor(x_eval_tensor),torch.Tensor(y_eval).long()) 
 
@@ -90,7 +115,7 @@ def get_dataset(dataset, data_path):
         exit('unknown dataset: %s'%dataset)
 
     #batch size changed form 256 to 16
-    testloader = torch.utils.data.DataLoader(dst_test, batch_size=256, shuffle=True,drop_last=True)
+    testloader = torch.utils.data.DataLoader(dst_test, batch_size=256, shuffle=True, drop_last=True)
     return embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader
 
 def word_embedding_from_text_set(train_set, vectors):
@@ -111,8 +136,8 @@ def word_embedding_from_text_set(train_set, vectors):
             #     continue
             if vectors.__contains__(corpus[i][j]):
                 embedded_sentence.append(vectors[corpus[i][j]])
-            # else:
-            #     embedded_sentence.append(vectors['unk'])
+            else:
+                embedded_sentence.append(vectors['unk'])
         if len(embedded_sentence) > 0:
             embedded_train_set.append(torch.tensor(np.array(embedded_sentence)))
         
@@ -140,10 +165,10 @@ def get_default_convnet_setting():
 def get_network(model, embed_dim, num_classes):
     torch.random.manual_seed(int(time.time() * 1000) % 100000)
     # net_width, net_depth, net_act, net_norm, net_pooling = get_default_convnet_setting()
-
-    if model == 'LSTMNet':
+    if model == 'MLP':
+        net  = MLPV2(embed_dim = embed_dim, hidden_dim = 256, num_classes = num_classes)
+    elif model == 'LSTMNet':
         net = LSTMNet(embed_dim = embed_dim, hidden_dim = 256, num_classes = num_classes)
-
     else:
         net = None
         exit('unknown model: %s'%model)
