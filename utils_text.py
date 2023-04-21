@@ -20,6 +20,8 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import gensim.downloader as api
 import re
+import csv
+import h5py
 
 SST_DATASETS = ["SST1-w2v", "SST1-glove", "SST1-transformer", "SST1-w2v-flat", "SST1-glove-flat", "SST1-transformer-flat", \
                     "SST2-w2v", "SST2-glove", "SST2-transformer", "SST2-w2v-flat", "SST2-glove-flat", "SST2-transformer-flat"]
@@ -28,6 +30,60 @@ def set_seed(seed):
   random.seed(seed)
   np.random.seed(seed)
   torch.manual_seed(seed)
+
+def encode_data(dataset):
+    folder_path = os.path.join(os.environ['DATA_DIR'], dataset)
+
+    ind = 2 if dataset == 'dbpedia' else 1
+    x_train = []
+    y_train = []
+    with open(os.path.join(folder_path, 'train.csv'), newline='') as f:
+        reader = csv.reader(f, delimiter=',')
+        for i, row in enumerate(reader):
+            x_train.append(row[ind])
+            y_train.append(int(row[0])-1)
+            
+    x_test = []
+    y_test = []
+    with open(os.path.join(folder_path, 'test.csv'), newline='') as f:
+        reader = csv.reader(f, delimiter=',')
+        for row in reader:
+            x_test.append(row[ind])
+            y_test.append(int(row[0])-1)
+
+    # for i in range(10):
+    #     print(x_train[i])
+    #     print(y_train[i])
+    #     print()
+    # return 
+
+    st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
+    model = SentenceTransformer(st_model)
+    embedding_size = 768
+
+    x_eval = None
+    for i in range(0, len(x_test), 1024):
+        k = model.encode(x_test[i:i+1024])
+        x_eval = k if x_eval is None else np.concatenate((x_eval, k), axis=0)
+        print(f"test {i}/{len(x_test)}")
+        
+    print(x_eval.shape, len(y_test))
+
+    with h5py.File(os.path.join(folder_path, 'processed_test.h5'), 'w') as f:
+        f.create_dataset('text_embeddings', data = x_eval)
+        f.create_dataset('labels', data = y_test)
+
+    x_eval = None
+    for i in range(0, len(x_train), 4096):
+        k = model.encode(x_train[i:i+4096])
+        x_eval = k if x_eval is None else np.concatenate((x_eval, k), axis=0)
+        print(f"train {i}/{len(x_train)}")
+        
+    print(x_eval.shape, len(y_train))
+
+    with h5py.File(os.path.join(folder_path, 'processed_train.h5'), 'w') as f:
+        f.create_dataset('text_embeddings', data = x_eval)
+        f.create_dataset('labels', data = y_train)
 
 def get_dataset(dataset, data_path):
     if dataset == 'dummy':
@@ -86,14 +142,11 @@ def get_dataset(dataset, data_path):
 
         elif 'transformer' in dataset:
             st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
-            orig_model = SentenceTransformer(st_model)
+            model = SentenceTransformer(st_model)
             embedding_size = 768
 
-            x_train = orig_model.encode(x_train, output_value='token_embeddings')
-            x_eval = orig_model.encode(x_eval, output_value='token_embeddings')
-
-        else:
-            exit('unknown dataset: %s'%dataset)
+            x_train = model.encode(x_train, output_value='token_embeddings')
+            x_eval = model.encode(x_eval, output_value='token_embeddings') 
 
         
         print("Train size:", len(x_train))
@@ -110,6 +163,55 @@ def get_dataset(dataset, data_path):
 
         dst_train = TensorDataset(torch.Tensor(x_train_tensor),torch.Tensor(y_train).long()) 
         dst_test = TensorDataset(torch.Tensor(x_eval_tensor),torch.Tensor(y_eval).long()) 
+
+    elif dataset in ['yahoo', 'dbpedia']:
+        folder_path = os.path.join(os.environ['DATA_DIR'], dataset)
+
+        train_data = h5py.File(os.path.join(folder_path, 'processed_train.h5'), 'r')
+        test_data =  h5py.File(os.path.join(folder_path, 'processed_test.h5'), 'r')
+
+        x_train = torch.tensor(np.array(train_data['text_embeddings']))
+        y_train = torch.tensor(np.array(train_data['labels']))
+        
+        x_test = torch.tensor(np.array(test_data['text_embeddings']))
+        y_test = torch.tensor(np.array(test_data['labels']))
+
+        dst_train = TensorDataset(x_train, y_train.long())
+        dst_test = TensorDataset(x_test, y_test.long())
+
+        embedding_size = 768
+        max_sentence_len = 1
+        class_names =   [
+                            "Society & Culture",
+                            "Science & Mathematics",
+                            "Health", "Education & Reference",
+                            "Computers & Internet",
+                            "Sports",
+                            "Business & Finance",
+                            "Entertainment & Music",
+                            "Family & Relationships",
+                            "Politics & Government"
+                        ] if dataset == 'yahoo' else [
+                            "Company",
+                            "EducationalInstitution"
+                            "Artist",
+                            "Athlete",
+                            "OfficeHolder",
+                            "MeanOfTransportation",
+                            "Building",
+                            "NaturalPlace",
+                            "Village",
+                            "Animal",
+                            "Plant",
+                            "Album",
+                            "Film",
+                            "WrittenWork"
+                        ]
+
+        num_classes = len(class_names)
+
+        print("Train size:", len(x_train))
+        print("Test size:", len(x_test))
 
     else:
         exit('unknown dataset: %s'%dataset)
@@ -166,7 +268,7 @@ def get_network(model, embed_dim, num_classes):
     torch.random.manual_seed(int(time.time() * 1000) % 100000)
     # net_width, net_depth, net_act, net_norm, net_pooling = get_default_convnet_setting()
     if model == 'MLP':
-        net  = MLPV2(embed_dim = embed_dim, hidden_dim = 256, num_classes = num_classes)
+        net  = MLPV2(embed_dim = embed_dim, hidden_dim = 512, num_classes = num_classes)
     elif model == 'LSTMNet':
         net = LSTMNet(embed_dim = embed_dim, hidden_dim = 256, num_classes = num_classes)
     else:
@@ -622,4 +724,4 @@ AUGMENT_FNS = {
 
 
 if __name__ == '__main__':
-    embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('SST2', "")
+    embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('yahoo', "")
