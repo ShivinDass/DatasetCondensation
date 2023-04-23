@@ -13,7 +13,7 @@ from utils_text import get_loops, get_dataset_embedding, get_network_embedding, 
 def main():
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
-    parser.add_argument('--dataset', type=str, default='SST2', help='dataset')
+    parser.add_argument('--dataset', type=str, default='IMDB', help='dataset')
     parser.add_argument('--model', type=str, default='MLP', help='model')
     parser.add_argument('--ipc', type=int, default=50, help='image(s) per class')
     parser.add_argument('--eval_mode', type=str, default='SS', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
     parser.add_argument('--dis_metric', type=str, default='ours', help='distance metric')
+    parser.add_argument('--silo', type=int, default=0, help='silo number')
 
     args = parser.parse_args()
     args.method = 'DM'
@@ -50,7 +51,7 @@ def main():
 
     eval_it_pool = np.arange(0, args.Iteration+1, 2000).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
     print('eval_it_pool: ', eval_it_pool)
-    embedding_size, num_classes, class_names, dst_train, dst_test, testloader = get_dataset_embedding(args.dataset, args.data_path)
+    embedding_size, num_classes, class_names, dst_train, dst_test, testloader = get_dataset_embedding(args.dataset, args.data_path, silo=args.silo)
     model_eval_pool = get_eval_pool(args.eval_mode, args.model, args.model)
 
 

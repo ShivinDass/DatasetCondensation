@@ -11,13 +11,14 @@ from torchvision import datasets, transforms
 from scipy.ndimage.interpolation import rotate as scipyrotate
 from networks import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN, LSTMNet, MLPV2
 from sentence_transformers import SentenceTransformer, InputExample, losses, models, datasets, evaluation
+import h5py
 
 def set_seed(seed):
   random.seed(seed)
   np.random.seed(seed)
   torch.manual_seed(seed)
 
-def get_dataset(dataset, data_path):
+def get_dataset(dataset, data_path, silo=None):
     if dataset == 'dummy':
         embedding_size = 728
         max_sentence_len = 25
@@ -80,6 +81,78 @@ def get_dataset(dataset, data_path):
         dst_train = TensorDataset(torch.Tensor(x_train_tensor),torch.Tensor(y_train).long()) 
         dst_test = TensorDataset(torch.Tensor(x_eval_tensor),torch.Tensor(y_eval).long()) 
 
+    elif dataset in ['yahoo', 'dbpedia']:
+        folder_path = os.path.join("gdrive/MyDrive/DL_Experiments/TextExperiments/data/new_data", dataset)
+
+        train_data = h5py.File(os.path.join(folder_path, 'processed_train.h5'), 'r')
+        test_data =  h5py.File(os.path.join(folder_path, 'processed_test.h5'), 'r')
+
+        x_train = torch.tensor(np.array(train_data['text_embeddings']))
+        y_train = torch.tensor(np.array(train_data['labels']))
+
+        length = y_train.size(dim=0)
+        classes = 10 if dataset == "yahoo" else 14
+
+        new_x_train = []
+        new_y_train = []
+
+        for i in range(classes):
+            idx = torch.where(y_train == i, 1, 0)
+            idx = torch.nonzero(idx)
+            samples_per_silo = idx.size(dim=0) // 10
+            start = samples_per_silo*silo
+            end = samples_per_silo*(silo+1)
+            idx_class = idx[start:end]
+            new_x_train.append(x_train[idx_class])
+            new_y_train.append(y_train[idx_class])
+
+        new_x_train = np.array(torch.cat(new_x_train, dim=0)).squeeze()
+        new_y_train = np.array(torch.cat(new_y_train, dim=0)).squeeze()
+        x_train = torch.tensor(new_x_train)
+        y_train = torch.tensor(new_y_train)
+
+
+        
+        x_test = torch.tensor(np.array(test_data['text_embeddings']))
+        y_test = torch.tensor(np.array(test_data['labels']))
+
+        dst_train = TensorDataset(x_train, y_train.long())
+        dst_test = TensorDataset(x_test, y_test.long())
+
+        embedding_size = 768
+        max_sentence_len = 1
+        class_names =   [
+                            "Society & Culture",
+                            "Science & Mathematics",
+                            "Health", "Education & Reference",
+                            "Computers & Internet",
+                            "Sports",
+                            "Business & Finance",
+                            "Entertainment & Music",
+                            "Family & Relationships",
+                            "Politics & Government"
+                        ] if dataset == 'yahoo' else [
+                            "Company",
+                            "EducationalInstitution"
+                            "Artist",
+                            "Athlete",
+                            "OfficeHolder",
+                            "MeanOfTransportation",
+                            "Building",
+                            "NaturalPlace",
+                            "Village",
+                            "Animal",
+                            "Plant",
+                            "Album",
+                            "Film",
+                            "WrittenWork"
+                        ]
+
+        num_classes = len(class_names)
+
+        print("Train size:", len(x_train))
+        print("Test size:", len(x_test))
+
     else:
         exit('unknown dataset: %s'%dataset)
 
@@ -87,7 +160,7 @@ def get_dataset(dataset, data_path):
     testloader = torch.utils.data.DataLoader(dst_test, batch_size=16, shuffle=True,drop_last=True)
     return embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader
 
-def get_dataset_embedding(dataset, data_path):
+def get_dataset_embedding(dataset, data_path, silo=None):
     if dataset == 'dummy':
         embedding_size = 728
         
@@ -138,6 +211,114 @@ def get_dataset_embedding(dataset, data_path):
 
         dst_train = TensorDataset(torch.Tensor(X_train_noFT),torch.Tensor(y_train).long()) 
         dst_test = TensorDataset(torch.Tensor(X_eval_noFT),torch.Tensor(y_eval).long()) 
+
+    elif dataset == "IMDB":
+        train_df = pd.read_csv('https://raw.githubusercontent.com/sanromra/imdb_data/main/train_IMDB_silo{}.tsv'.format(silo), delimiter='\t', header=None)
+        eval_df = pd.read_csv('https://raw.githubusercontent.com/sanromra/imdb_data/main/test_IMDB.tsv', delimiter='\t', header=None)
+
+        num_classes = 2
+        class_name = ['negative', 'positive']
+
+        class_names = class_name
+
+        text_col=train_df.columns.values[0] 
+        category_col=train_df.columns.values[1]
+
+        x_eval = eval_df[text_col].values.tolist()
+        y_eval = eval_df[category_col].values.tolist()
+
+        st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
+        num_training = 64 #@param ["8", "16", "32", "54", "128", "256", "512"] {type:"raw"}
+        embedding_size = 768
+        
+        set_seed(0)
+        train_df_sample = train_df
+        x_train = train_df_sample[text_col].values.tolist()
+        y_train = train_df_sample[category_col].values.tolist()
+        # print(y_train)
+
+        orig_model = SentenceTransformer(st_model)
+
+        X_train_noFT = orig_model.encode(x_train)
+        X_eval_noFT = orig_model.encode(x_eval)
+        
+        print(len(X_train_noFT))
+        print(len(X_eval_noFT))
+
+        dst_train = TensorDataset(torch.Tensor(X_train_noFT),torch.Tensor(y_train).long()) 
+        dst_test = TensorDataset(torch.Tensor(X_eval_noFT),torch.Tensor(y_eval).long()) 
+
+    elif dataset in ['yahoo', 'dbpedia']:
+        folder_path = os.path.join("gdrive/MyDrive/DL_Experiments/TextExperiments/data/new_data", dataset)
+
+        train_data = h5py.File(os.path.join(folder_path, 'processed_train.h5'), 'r')
+        test_data =  h5py.File(os.path.join(folder_path, 'processed_test.h5'), 'r')
+
+        x_train = torch.tensor(np.array(train_data['text_embeddings']))
+        y_train = torch.tensor(np.array(train_data['labels']))
+
+        length = y_train.size(dim=0)
+        classes = 10 if dataset == "yahoo" else 14
+
+        new_x_train = []
+        new_y_train = []
+
+        for i in range(classes):
+            idx = torch.where(y_train == i, 1, 0)
+            idx = torch.nonzero(idx)
+            samples_per_silo = idx.size(dim=0) // 10
+            start = samples_per_silo*silo
+            end = samples_per_silo*(silo+1)
+            idx_class = idx[start:end]
+            new_x_train.append(x_train[idx_class])
+            new_y_train.append(y_train[idx_class])
+
+        new_x_train = np.array(torch.cat(new_x_train, dim=0)).squeeze()
+        new_y_train = np.array(torch.cat(new_y_train, dim=0)).squeeze()
+        x_train = torch.tensor(new_x_train)
+        y_train = torch.tensor(new_y_train)
+
+
+        
+        x_test = torch.tensor(np.array(test_data['text_embeddings']))
+        y_test = torch.tensor(np.array(test_data['labels']))
+
+        dst_train = TensorDataset(x_train, y_train.long())
+        dst_test = TensorDataset(x_test, y_test.long())
+
+        embedding_size = 768
+        max_sentence_len = 1
+        class_names =   [
+                            "Society & Culture",
+                            "Science & Mathematics",
+                            "Health", "Education & Reference",
+                            "Computers & Internet",
+                            "Sports",
+                            "Business & Finance",
+                            "Entertainment & Music",
+                            "Family & Relationships",
+                            "Politics & Government"
+                        ] if dataset == 'yahoo' else [
+                            "Company",
+                            "EducationalInstitution"
+                            "Artist",
+                            "Athlete",
+                            "OfficeHolder",
+                            "MeanOfTransportation",
+                            "Building",
+                            "NaturalPlace",
+                            "Village",
+                            "Animal",
+                            "Plant",
+                            "Album",
+                            "Film",
+                            "WrittenWork"
+                        ]
+
+        num_classes = len(class_names)
+
+        print("Train size:", len(x_train))
+        print("Test size:", len(x_test))
 
     else:
         exit('unknown dataset: %s'%dataset)
