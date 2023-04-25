@@ -9,21 +9,20 @@ import torch.nn as nn
 from torchvision.utils import save_image
 from utils_text import get_loops, get_dataset, get_network, get_eval_pool, evaluate_synset, get_daparam, match_loss, get_time, TensorDataset, epoch, DiffAugment, ParamDiffAug
 
-import wandb
 
 def main():
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
-    parser.add_argument('--dataset', type=str, default='SST2', help='dataset')
+    parser.add_argument('--dataset', type=str, default='CIFAR10', help='dataset')
     parser.add_argument('--model', type=str, default='LSTMNet', help='model')
     parser.add_argument('--ipc', type=int, default=50, help='image(s) per class')
     parser.add_argument('--eval_mode', type=str, default='SS', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
-    parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
+    parser.add_argument('--num_exp', type=int, default=5, help='the number of experiments')
     parser.add_argument('--num_eval', type=int, default=20, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=1000, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
-    parser.add_argument('--Iteration', type=int, default=80000, help='training iterations')
+    parser.add_argument('--Iteration', type=int, default=10000, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=1.0, help='learning rate for updating synthetic images')
-    parser.add_argument('--lr_net', type=float, default=0.001, help='learning rate for updating network parameters')
+    parser.add_argument('--lr_net', type=float, default=0.01, help='learning rate for updating network parameters')
     parser.add_argument('--batch_real', type=int, default=256, help='batch size for real data')
     parser.add_argument('--batch_train', type=int, default=256, help='batch size for training networks')
     parser.add_argument('--init', type=str, default='real', help='noise/real: initialize synthetic images from random noise or randomly sampled real images.')
@@ -37,12 +36,6 @@ def main():
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     args.dsa_param = ParamDiffAug()
     args.dsa = False if ('dsa_strategy' not in args or args.dsa_strategy in ['none', 'None']) else True
-
-    run = wandb.init(
-        resume=args.dataset+f"_{args.save_path.split('/')[1]}",
-        project="text_condensation",
-        entity="clvr"
-    )
 
     if not os.path.exists(args.data_path):
         os.mkdir(args.data_path)
@@ -92,10 +85,7 @@ def main():
             return data_all[idx_shuffle]
 
         ''' initialize the synthetic data '''
-        if 'flat' in args.dataset:
-            data_syn = torch.randn(size=(num_classes*args.ipc, embedding_size), dtype=torch.float, requires_grad=True, device=args.device)
-        else:
-            data_syn = torch.randn(size=(num_classes*args.ipc, max_sentence_len, embedding_size), dtype=torch.float, requires_grad=True, device=args.device)
+        data_syn = torch.randn(size=(num_classes*args.ipc, max_sentence_len, embedding_size), dtype=torch.float, requires_grad=True, device=args.device)
         label_syn = torch.tensor([np.ones(args.ipc)*i for i in range(num_classes)], dtype=torch.long, requires_grad=False, device=args.device).view(-1) # [0,0,0, 1,1,1, ..., 9,9,9]
 
         if args.init == 'real':
@@ -128,7 +118,6 @@ def main():
                         _, acc_train, acc_test = evaluate_synset(it_eval, net_eval, data_syn_eval, label_syn_eval, testloader, args)
                         accs.append(acc_test)
                     print('Evaluate %d random %s, mean = %.4f std = %.4f\n-------------------------'%(len(accs), model_eval, np.mean(accs), np.std(accs)))
-                    wandb.log({"mean": np.mean(accs), "std": np.std(accs)})
 
                     if it == args.Iteration: # record the final results
                         accs_all_exps[model_eval] += accs
@@ -154,10 +143,7 @@ def main():
             loss = torch.tensor(0.0).to(args.device)
             for c in range(num_classes):
                 dt_real = get_data_from_class(c, args.batch_real)
-                if 'flat' in args.dataset:
-                    dt_syn = data_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, embedding_size))
-                else:
-                    dt_syn = data_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, max_sentence_len, embedding_size))
+                dt_syn = data_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, max_sentence_len, embedding_size))
 
                 output_real = embed(dt_real).detach()
                 output_syn = embed(dt_syn)
@@ -172,8 +158,8 @@ def main():
 
             loss_avg /= (num_classes)
 
-            if it%100 == 0:
-                print('%s iter = %05d, loss = %.8f' % (get_time(), it, loss_avg))
+            if it%10 == 0:
+                print('%s iter = %05d, loss = %.4f' % (get_time(), it, loss_avg))
 
             if it == args.Iteration: # only record the final results
                 data_save.append([copy.deepcopy(data_syn.detach().cpu()), copy.deepcopy(label_syn.detach().cpu())])

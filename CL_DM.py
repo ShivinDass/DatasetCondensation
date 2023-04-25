@@ -2,19 +2,21 @@ import os
 import numpy as np
 import torch
 import argparse
-from utils import get_dataset, get_network, get_eval_pool, evaluate_synset, ParamDiffAug, TensorDataset
+from utils_text_continual import get_dataset_embedding, get_network_embedding, get_eval_pool, evaluate_synset, ParamDiffAug, TensorDataset
 import copy
 import gc
+import h5py
 
 
 def main():
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--method', type=str, default='random', help='random/herding/DSA/DM')
-    parser.add_argument('--dataset', type=str, default='CIFAR100', help='dataset')
-    parser.add_argument('--model', type=str, default='ConvNet', help='model')
+    parser.add_argument('--dataset', type=str, default='yahoo', help='dataset')
+    parser.add_argument('--model', type=str, default='MLP', help='model')
     parser.add_argument('--ipc', type=int, default=20, help='image(s) per class')
     parser.add_argument('--steps', type=int, default=5, help='5/10-step learning')
-    parser.add_argument('--num_eval', type=int, default=3, help='evaluation number')
+    #original number of num_eval is 5
+    parser.add_argument('--num_eval', type=int, default=1, help='evaluation number')
     parser.add_argument('--epoch_eval_train', type=int, default=1000, help='epochs to train a model with synthetic data')
     parser.add_argument('--lr_net', type=float, default=0.01, help='learning rate for updating network parameters')
     parser.add_argument('--batch_train', type=int, default=256, help='batch size for training networks')
@@ -23,27 +25,33 @@ def main():
     args = parser.parse_args()
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     args.dsa_param = ParamDiffAug()
-    args.dsa = True # augment images for all methods
+    print('Heree')
+    # args.dsa = True # augment images for all methods
+    args.dsa = False
     args.dsa_strategy = 'color_crop_cutout_flip_scale_rotate' # for CIFAR10/100
 
     if not os.path.exists(args.data_path):
         os.mkdir(args.data_path)
 
-    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
-
+    print('Now here')
+    channel, num_classes, class_names,dst_train, dst_test, testloader = get_dataset_embedding(args.dataset, args.data_path)
+    print('Here now')
 
     ''' all training data '''
     images_all = []
     labels_all = []
     indices_class = [[] for c in range(num_classes)]
 
+    print('1')
     images_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
     labels_all = [dst_train[i][1] for i in range(len(dst_train))]
+    print('2')
     for i, lab in enumerate(labels_all):
         indices_class[lab].append(i)
+    print('3', args.device, torch.cuda.is_available())
     images_all = torch.cat(images_all, dim=0).to(args.device)
     labels_all = torch.tensor(labels_all, dtype=torch.long, device=args.device)
-
+    print('4')
     # for c in range(num_classes):
     #     print('class c = %d: %d real images' % (c, len(indices_class[c])))
 
@@ -56,6 +64,7 @@ def main():
     print('method: ', args.method)
     results = np.zeros((args.steps, 5*args.num_eval))
 
+    # original range for seed_cl was 5
     for seed_cl in range(5):
         num_classes_step = num_classes // args.steps
         np.random.seed(seed_cl)
@@ -89,10 +98,20 @@ def main():
             print('use data: ', fname)
 
         elif args.method == 'DM':
-            fname = os.path.join(args.data_path, 'metasets', 'cl_data', 'cl_DM_CIFAR100_ConvNet_20ipc_%dsteps_seed%d.pt'%(args.steps, seed_cl))
+            # fname = os.path.join(args.data_path, 'metasets', 'cl_data', 'cl_DM_CIFAR100_ConvNet_20ipc_%dsteps_seed%d.pt'%(args.steps, seed_cl))
+            fname = "/content/drive/Shareddrives/CSCI_566_Project/Continual Learning/DatasetCondensation-DM_sentence_embedding/result/res_DM_%s_MLP_%dipc.pt"%(args.dataset,args.ipc) 
             data = torch.load(fname, map_location='cpu')['data']
-            images_train_all = [data[step][0] for step in range(args.steps)]
-            labels_train_all = [data[step][1] for step in range(args.steps)]
+            #Now this data has (num_class*ipc,embedding_size)
+            # images_train_all = [data[step][0] for step in range(args.steps)]
+            # labels_train_all = [data[step][1] for step in range(args.steps)]
+
+            images_train_all = []
+            labels_train_all = []
+            for step in range(args.steps):
+                classes_current = class_order[step * num_classes_step: (step + 1) * num_classes_step]
+                images_train_all += [torch.cat([data[0][0][c*args.ipc:(c+1)*args.ipc] for c in classes_current], dim=0)]
+                labels_train_all += [torch.tensor([c for c in classes_current for i in range(args.ipc)], dtype=torch.long, device=args.device)]
+            
             print('use data: ', fname)
 
         else:
@@ -132,7 +151,7 @@ def main():
             ''' train model on the newest memory '''
             accs = []
             for ep_eval in range(args.num_eval):
-                net_eval = get_network(args.model, channel, num_classes, im_size)
+                net_eval = get_network_embedding(args.model, channel, num_classes)
                 net_eval = net_eval.to(args.device)
                 img_syn_eval = copy.deepcopy(images_train.detach())
                 lab_syn_eval = copy.deepcopy(labels_train.detach())
@@ -149,7 +168,7 @@ def main():
     for step in range(args.steps):
         results_str += '& %.1f$\pm$%.1f  ' % (np.mean(results[step]) * 100, np.std(results[step]) * 100)
     print('\n\n')
-    print('%d step learning %s perforamnce:'%(args.steps, args.method))
+    print('%d step learning %s performance:'%(args.steps, args.method))
     print(results_str)
     print('Done')
 

@@ -11,143 +11,102 @@ from torchvision import datasets, transforms
 from scipy.ndimage.interpolation import rotate as scipyrotate
 from networks import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN, LSTMNet, MLPV2
 from sentence_transformers import SentenceTransformer, InputExample, losses, models, datasets, evaluation
+import h5py
 
 def set_seed(seed):
   random.seed(seed)
   np.random.seed(seed)
   torch.manual_seed(seed)
 
-def get_dataset(dataset, data_path):
-    if dataset == 'dummy':
-        embedding_size = 728
-        max_sentence_len = 25
+
+def get_data_and_labels(file_name):
+    print('Now here in get_data')
+    hf = h5py.File(file_name, 'r')
+    data = hf.get('text_embeddings')
+    labels = hf.get('labels')
+    return data, labels
+
+def get_images(train_data,train_label,indices_class,c, n):  # get random n images from class c
+  idx_shuffle = indices_class[c][:n]
+  return torch.Tensor(train_data[idx_shuffle]),train_label[idx_shuffle]
+
+def shorten_dataset(train_data , train_label, n):
+  num_classes = np.unique(train_label).shape[0]
+  indices_class = [[] for c in range(num_classes)]
+  for i, lab in enumerate(train_label):
+    indices_class[lab].append(i)
+  classes_current = np.unique(train_label)
+  
+  images_train_all = torch.cat([get_images(train_data,train_label,indices_class,c, n)[0] for c in classes_current], dim=0)
+  labels_train_all = torch.tensor([c for c in classes_current for i in range(n)], dtype=torch.long)
+  return images_train_all, labels_train_all
+
+def get_dataset_embedding(dataset, data_path):    
+    if dataset == "yahoo":
         
-        num_classes = 2
-        class_names = ['negative', 'positive']
+        print('Now here in utils_text')
+        train_data , train_label = get_data_and_labels(data_path+"/yahoo-flat/"+"processed_train.h5")
+        eval_data, eval_label  = get_data_and_labels(data_path+"/yahoo-flat/"+"processed_test.h5")
+        print(type(train_data), type(train_label))
 
-        train_data = torch.cat((torch.randn(size = (5000, max_sentence_len, embedding_size)) - 1, torch.randn(size = (5000, max_sentence_len, embedding_size)) + 1), dim=0)
-        test_data = torch.cat((torch.randn(size = (200, max_sentence_len, embedding_size)) - 1, torch.randn(size = (200, max_sentence_len, embedding_size)) + 1), dim=0)
-
-        train_labels = torch.cat((torch.zeros(5000,), torch.ones(5000,)), dim = 0).long()
-        test_labels = torch.cat((torch.zeros(200,), torch.ones(200,)), dim = 0).long()
-
-        dst_train = TensorDataset(train_data, train_labels)
-        dst_test = TensorDataset(test_data, test_labels)
-    
-    elif dataset == "SST2":
-        train_df = pd.read_csv('https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/train.tsv', delimiter='\t', header=None)
-        eval_df = pd.read_csv('https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/test.tsv', delimiter='\t', header=None)
-
-        num_classes = 2
-        class_name = ['negative', 'positive']
+        num_classes = 10
+        class_name = ["Society&Culture"
+,"Science&Mathematics"
+,"Health"
+,"Education&Reference"
+,"Computers&Internet"
+,"Sports"
+,"Business&Finance"
+,"Entertainment&Music"
+,"Family&Relationships"
+,"Politics&Government"]
 
         class_names = class_name
 
-        text_col=train_df.columns.values[0] 
-        category_col=train_df.columns.values[1]
-
-        x_eval = eval_df[text_col].values.tolist()
-        y_eval = eval_df[category_col].values.tolist()
-
-        st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
-        num_training = 64 #@param ["8", "16", "32", "54", "128", "256", "512"] {type:"raw"}
         embedding_size = 768
-        max_sentence_len = 25
         
-        set_seed(0)
-        train_df_sample = train_df
-        x_train = train_df_sample[text_col].values.tolist()
-        y_train = train_df_sample[category_col].values.tolist()
-        # print(y_train)
+        train_data,train_label = shorten_dataset(train_data,train_label,10000)
+        eval_data,eval_label = shorten_dataset(eval_data,eval_label,10000)
+        print(train_data.shape,train_label.shape)
+        dst_train = TensorDataset(torch.Tensor(train_data),torch.Tensor(train_label).long()) 
+        dst_test = TensorDataset(torch.Tensor(eval_data),torch.Tensor(eval_label).long())
+    
+    elif dataset == "dbpedia":
+        
+        train_data , train_label = get_data_and_labels(data_path+"/dbpedia-flat/"+"processed_train.h5")
+        eval_data, eval_label  = get_data_and_labels(data_path+"/dbpedia-flat/"+"processed_test.h5")
 
-        orig_model = SentenceTransformer(st_model)
+        num_classes = 14
+        class_name = ["Company",
+"EducationalInstitution",
+"Artist",
+"Athlete",
+"OfficeHolder",
+"MeanOfTransportation",
+"Building",
+"NaturalPlace",
+"Village",
+"Animal",
+"Plant",
+"Album",
+"Film",
+"WrittenWork"]
 
-        X_train_noFT = orig_model.encode(x_train, output_value='token_embeddings')
-        X_eval_noFT = orig_model.encode(x_eval, output_value='token_embeddings')
-        
-        print(len(X_train_noFT))
-        print(len(X_eval_noFT))
-        
-        x_train_tensor = nn.utils.rnn.pad_sequence(X_train_noFT, batch_first=True)[:, :max_sentence_len, :]
-        x_eval_tensor = nn.utils.rnn.pad_sequence(X_eval_noFT, batch_first=True)[:, :max_sentence_len, :]
-        # print(x_train_tensor.shape)
-        # trainset = TensorDataset(torch.Tensor(X_eval_noFT),torch.Tensor(y_eval)) 
-        # valloader = torch.utils.data.DataLoader(valset, batch_size=16, num_workers=2)
-        
-        # valset = TensorDataset(torch.Tensor(X_eval_noFT),torch.Tensor(y_eval)) 
-        # valloader = torch.utils.data.DataLoader(valset, batch_size=16, num_workers=2)
+        class_names = class_name
 
-        dst_train = TensorDataset(torch.Tensor(x_train_tensor),torch.Tensor(y_train).long()) 
-        dst_test = TensorDataset(torch.Tensor(x_eval_tensor),torch.Tensor(y_eval).long()) 
+        embedding_size = 768
+        
+        train_data,train_label = shorten_dataset(train_data,train_label,10000)
+        eval_data,eval_label = shorten_dataset(eval_data,eval_label,10000)
+        print(train_data.shape,train_label.shape)
+        dst_train = TensorDataset(torch.Tensor(train_data),torch.Tensor(train_label).long()) 
+        dst_test = TensorDataset(torch.Tensor(eval_data),torch.Tensor(eval_label).long())
 
     else:
         exit('unknown dataset: %s'%dataset)
 
-    #batch size changed form 256 to 16
-    testloader = torch.utils.data.DataLoader(dst_test, batch_size=16, shuffle=True,drop_last=True)
-    return embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader
-
-def get_dataset_embedding(dataset, data_path):
-    if dataset == 'dummy':
-        embedding_size = 728
-        
-        num_classes = 2
-        class_names = ['negative', 'positive']
-
-        train_data = torch.cat((torch.randn(size = (5000,embedding_size)) - 1, torch.randn(size = (5000, embedding_size)) + 1), dim=0)
-        test_data = torch.cat((torch.randn(size = (200, embedding_size)) - 1, torch.randn(size = (200, embedding_size)) + 1), dim=0)
-
-        train_labels = torch.cat((torch.zeros(5000,), torch.ones(5000,)), dim = 0).long()
-        test_labels = torch.cat((torch.zeros(200,), torch.ones(200,)), dim = 0).long()
-
-        dst_train = TensorDataset(train_data, train_labels)
-        dst_test = TensorDataset(test_data, test_labels)
-    
-    elif dataset == "SST2":
-        train_df = pd.read_csv('https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/train.tsv', delimiter='\t', header=None)
-        eval_df = pd.read_csv('https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/test.tsv', delimiter='\t', header=None)
-
-        num_classes = 2
-        class_name = ['negative', 'positive']
-
-        class_names = class_name
-
-        text_col=train_df.columns.values[0] 
-        category_col=train_df.columns.values[1]
-
-        x_eval = eval_df[text_col].values.tolist()
-        y_eval = eval_df[category_col].values.tolist()
-
-        st_model = 'paraphrase-mpnet-base-v2' #@param ['paraphrase-mpnet-base-v2', 'all-mpnet-base-v1', 'all-mpnet-base-v2', 'stsb-mpnet-base-v2', 'all-MiniLM-L12-v2', 'paraphrase-albert-small-v2', 'all-roberta-large-v1']
-        num_training = 64 #@param ["8", "16", "32", "54", "128", "256", "512"] {type:"raw"}
-        embedding_size = 768
-        
-        set_seed(0)
-        train_df_sample = train_df
-        x_train = train_df_sample[text_col].values.tolist()
-        y_train = train_df_sample[category_col].values.tolist()
-        # print(y_train)
-
-        orig_model = SentenceTransformer(st_model)
-
-        X_train_noFT = orig_model.encode(x_train)
-        X_eval_noFT = orig_model.encode(x_eval)
-        
-        print(len(X_train_noFT))
-        print(len(X_eval_noFT))
-
-        dst_train = TensorDataset(torch.Tensor(X_train_noFT),torch.Tensor(y_train).long()) 
-        dst_test = TensorDataset(torch.Tensor(X_eval_noFT),torch.Tensor(y_eval).long()) 
-
-    else:
-        exit('unknown dataset: %s'%dataset)
-
-    #batch size changed form 256 to 16
     testloader = torch.utils.data.DataLoader(dst_test, batch_size=16, shuffle=True,drop_last=True)
     return embedding_size, num_classes, class_names, dst_train, dst_test, testloader
-# if __name__ == '__main__':
-#     embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('SST2', "")
-
 
 
 class TensorDataset(Dataset):
