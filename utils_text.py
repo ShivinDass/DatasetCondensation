@@ -164,7 +164,7 @@ def get_dataset(dataset, data_path):
         dst_train = TensorDataset(torch.Tensor(x_train_tensor),torch.Tensor(y_train).long()) 
         dst_test = TensorDataset(torch.Tensor(x_eval_tensor),torch.Tensor(y_eval).long()) 
 
-    elif dataset in ['yahoo', 'dbpedia']:
+    elif dataset in ['yahoo-flat', 'dbpedia-flat']:
         folder_path = os.path.join(os.environ['DATA_DIR'], dataset)
 
         train_data = h5py.File(os.path.join(folder_path, 'processed_train.h5'), 'r')
@@ -191,9 +191,9 @@ def get_dataset(dataset, data_path):
                             "Entertainment & Music",
                             "Family & Relationships",
                             "Politics & Government"
-                        ] if dataset == 'yahoo' else [
+                        ] if 'yahoo' in dataset else [
                             "Company",
-                            "EducationalInstitution"
+                            "EducationalInstitution",
                             "Artist",
                             "Athlete",
                             "OfficeHolder",
@@ -724,4 +724,5 @@ AUGMENT_FNS = {
 
 
 if __name__ == '__main__':
-    embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('yahoo', "")
+    # embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('yahoo-flat', "")
+    encode_data('dbpedia-flat')

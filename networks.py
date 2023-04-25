@@ -36,10 +36,10 @@ class MLPV2(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(embed_dim, hidden_dim),
             nn.LeakyReLU(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
+            # nn.Linear(hidden_dim, hidden_dim),
+            # nn.LeakyReLU(0.2),
+            # nn.Linear(hidden_dim, hidden_dim),
+            # nn.LeakyReLU(0.2),
         )
         self.classifier = nn.Linear(hidden_dim, num_classes)
     

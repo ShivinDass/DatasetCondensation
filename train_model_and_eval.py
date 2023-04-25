@@ -7,7 +7,7 @@ parser = argparse.ArgumentParser(description='Parameter Processing')
 args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset("dbpedia", "")
+embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset("yahoo-flat", "")
 
 # net = get_network("LSTMNet", embedding_size, num_classes).to(device)
 net = get_network("MLP", embedding_size, num_classes).to(device)
