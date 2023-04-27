@@ -22,8 +22,8 @@ def set_seed(seed):
 def get_data_and_labels(file_name):
     print('Now here in get_data')
     hf = h5py.File(file_name, 'r')
-    data = hf.get('text_embeddings')
-    labels = hf.get('labels')
+    data = np.array(hf.get('text_embeddings'))
+    labels = np.array(hf.get('labels'))
     return data, labels
 
 def get_images(train_data,train_label,indices_class,c, n):  # get random n images from class c
@@ -50,23 +50,24 @@ def get_dataset_embedding(dataset, data_path):
         print(type(train_data), type(train_label))
 
         num_classes = 10
-        class_name = ["Society&Culture"
-,"Science&Mathematics"
-,"Health"
-,"Education&Reference"
-,"Computers&Internet"
-,"Sports"
-,"Business&Finance"
-,"Entertainment&Music"
-,"Family&Relationships"
-,"Politics&Government"]
+        class_name = [  
+                        "Society&Culture"
+                        ,"Science&Mathematics"
+                        ,"Health"
+                        ,"Education&Reference"
+                        ,"Computers&Internet"
+                        ,"Sports"
+                        ,"Business&Finance"
+                        ,"Entertainment&Music"
+                        ,"Family&Relationships"
+                        ,"Politics&Government"]
 
         class_names = class_name
 
         embedding_size = 768
         
-        train_data,train_label = shorten_dataset(train_data,train_label,10000)
-        eval_data,eval_label = shorten_dataset(eval_data,eval_label,10000)
+        # train_data,train_label = shorten_dataset(train_data,train_label,10000)
+        # eval_data,eval_label = shorten_dataset(eval_data,eval_label,10000)
         print(train_data.shape,train_label.shape)
         dst_train = TensorDataset(torch.Tensor(train_data),torch.Tensor(train_label).long()) 
         dst_test = TensorDataset(torch.Tensor(eval_data),torch.Tensor(eval_label).long())
@@ -77,28 +78,83 @@ def get_dataset_embedding(dataset, data_path):
         eval_data, eval_label  = get_data_and_labels(data_path+"/dbpedia-flat/"+"processed_test.h5")
 
         num_classes = 14
-        class_name = ["Company",
-"EducationalInstitution",
-"Artist",
-"Athlete",
-"OfficeHolder",
-"MeanOfTransportation",
-"Building",
-"NaturalPlace",
-"Village",
-"Animal",
-"Plant",
-"Album",
-"Film",
-"WrittenWork"]
+        class_name = [
+                        "Company",
+                        "EducationalInstitution",
+                        "Artist",
+                        "Athlete",
+                        "OfficeHolder",
+                        "MeanOfTransportation",
+                        "Building",
+                        "NaturalPlace",
+                        "Village",
+                        "Animal",
+                        "Plant",
+                        "Album",
+                        "Film",
+                        "WrittenWork"]
 
         class_names = class_name
 
         embedding_size = 768
         
-        train_data,train_label = shorten_dataset(train_data,train_label,10000)
-        eval_data,eval_label = shorten_dataset(eval_data,eval_label,10000)
+        # train_data,train_label = shorten_dataset(train_data,train_label,10000)
+        # eval_data,eval_label = shorten_dataset(eval_data,eval_label,10000)
         print(train_data.shape,train_label.shape)
+        dst_train = TensorDataset(torch.Tensor(train_data),torch.Tensor(train_label).long()) 
+        dst_test = TensorDataset(torch.Tensor(eval_data),torch.Tensor(eval_label).long())
+
+    elif dataset == "combined":
+        
+        train_data_dbpedia , train_label_dbpedia = get_data_and_labels(data_path+"/dbpedia-flat/"+"processed_train.h5")
+        eval_data_dbpedia, eval_label_dbpedia  = get_data_and_labels(data_path+"/dbpedia-flat/"+"processed_test.h5")
+        train_data_yahoo , train_label_yahoo = get_data_and_labels(data_path+"/yahoo-flat/"+"processed_train.h5")
+        eval_data_yahoo, eval_label_yahoo  = get_data_and_labels(data_path+"/yahoo-flat/"+"processed_test.h5")
+
+
+        train_label_yahoo = train_label_yahoo + 14
+        eval_label_yahoo = eval_label_yahoo + 14
+        # for i in range(train_label_yahoo.shape[0]):
+        #     train_label_yahoo[i]+=14
+        # for i in range(eval_label_yahoo.shape[0]):
+        #     eval_label_yahoo[i]+=14
+
+        num_classes = 24
+        class_name = [
+                        "Company",
+                        "EducationalInstitution",
+                        "Artist",
+                        "Athlete",
+                        "OfficeHolder",
+                        "MeanOfTransportation",
+                        "Building",
+                        "NaturalPlace",
+                        "Village",
+                        "Animal",
+                        "Plant",
+                        "Album",
+                        "Film",
+                        "WrittenWork" , "Society&Culture"
+                        ,"Science&Mathematics"
+                        ,"Health"
+                        ,"Education&Reference"
+                        ,"Computers&Internet"
+                        ,"Sports"
+                        ,"Business&Finance"
+                        ,"Entertainment&Music"
+                        ,"Family&Relationships"
+                        ,"Politics&Government"]
+
+        class_names = class_name
+
+        embedding_size = 768
+        train_data = torch.cat((torch.tensor(train_data_dbpedia), torch.tensor(train_data_yahoo)), 0)
+        train_label = torch.cat((torch.tensor(train_label_dbpedia), torch.tensor(train_label_yahoo)), 0)
+        eval_data = torch.cat((torch.tensor(eval_data_dbpedia), torch.tensor(eval_data_yahoo)), 0)
+        eval_label = torch.cat((torch.tensor(eval_label_dbpedia), torch.tensor(eval_label_yahoo)), 0)
+
+        print(train_data.shape, train_label.shape)
+        print(eval_data.shape, eval_label.shape)
         dst_train = TensorDataset(torch.Tensor(train_data),torch.Tensor(train_label).long()) 
         dst_test = TensorDataset(torch.Tensor(eval_data),torch.Tensor(eval_label).long())
 
@@ -610,3 +666,5 @@ AUGMENT_FNS = {
     'rotate': [rand_rotate],
 }
 
+if __name__=="__main__":
+    embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset_embedding('combined', "data/")

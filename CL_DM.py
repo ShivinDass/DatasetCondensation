@@ -13,7 +13,7 @@ def main():
     parser.add_argument('--method', type=str, default='random', help='random/herding/DSA/DM')
     parser.add_argument('--dataset', type=str, default='yahoo', help='dataset')
     parser.add_argument('--model', type=str, default='MLP', help='model')
-    parser.add_argument('--ipc', type=int, default=20, help='image(s) per class')
+    parser.add_argument('--ipc', type=int, default=50, help='image(s) per class')
     parser.add_argument('--steps', type=int, default=5, help='5/10-step learning')
     #original number of num_eval is 5
     parser.add_argument('--num_eval', type=int, default=1, help='evaluation number')
@@ -99,8 +99,23 @@ def main():
 
         elif args.method == 'DM':
             # fname = os.path.join(args.data_path, 'metasets', 'cl_data', 'cl_DM_CIFAR100_ConvNet_20ipc_%dsteps_seed%d.pt'%(args.steps, seed_cl))
-            fname = "/content/drive/Shareddrives/CSCI_566_Project/Continual Learning/DatasetCondensation-DM_sentence_embedding/result/res_DM_%s_MLP_%dipc.pt"%(args.dataset,args.ipc) 
-            data = torch.load(fname, map_location='cpu')['data']
+            
+            if args.dataset == 'yahoo':
+                fname = "result/yahoo-50-shallow1_wide512-model/res_DM_yahoo-flat_MLP_50ipc.pt"
+                data = torch.load(fname, map_location='cpu')['data']
+            elif args.dataset == 'dbpedia':
+                fname = "result/dbpedia-50-shallow1_wide512-model/res_DM_dbpedia-flat_MLP_50ipc.pt"
+                data = torch.load(fname, map_location='cpu')['data']
+            elif args.dataset == 'combined':
+                fname = "result/dbpedia-50-shallow1_wide512-model/res_DM_dbpedia-flat_MLP_50ipc.pt"
+                data = torch.load(fname, map_location='cpu')['data']
+                
+                fname = "result/yahoo-50-shallow1_wide512-model/res_DM_yahoo-flat_MLP_50ipc.pt"
+                data2 = torch.load(fname, map_location='cpu')['data']
+
+                data[0][0] = torch.cat((data[0][0], data2[0][0]), dim = 0)
+                data[0][1] = torch.cat((data[0][1], data2[0][1] + 14), dim = 0)
+            
             #Now this data has (num_class*ipc,embedding_size)
             # images_train_all = [data[step][0] for step in range(args.steps)]
             # labels_train_all = [data[step][1] for step in range(args.steps)]
