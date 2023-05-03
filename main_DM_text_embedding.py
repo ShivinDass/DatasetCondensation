@@ -77,7 +77,7 @@ def main():
         ''' organize the real dataset '''
         data_all = []
         labels_all = []
-        indices_class = [[] for c in range(num_classes) if c in classes_present]
+        indices_class = [[] for c in range(num_classes)]
 
         data_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
         labels_all = [dst_train[i][1] for i in range(len(dst_train))]
