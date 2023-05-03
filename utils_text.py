@@ -213,7 +213,9 @@ def get_dataset_embedding(dataset, data_path, silo=None, iid=True):
         print(len(X_eval_noFT))
 
         dst_train = TensorDataset(torch.Tensor(X_train_noFT),torch.Tensor(y_train).long()) 
-        dst_test = TensorDataset(torch.Tensor(X_eval_noFT),torch.Tensor(y_eval).long()) 
+        dst_test = TensorDataset(torch.Tensor(X_eval_noFT),torch.Tensor(y_eval).long())
+
+        classes_present = torch.unique(torch.Tensor(y_train).long()) 
 
     elif dataset == "IMDB":
         train_df = pd.read_csv('https://raw.githubusercontent.com/sanromra/imdb_data/main/train_IMDB_silo{}.tsv'.format(silo), delimiter='\t', header=None)
@@ -250,6 +252,8 @@ def get_dataset_embedding(dataset, data_path, silo=None, iid=True):
 
         dst_train = TensorDataset(torch.Tensor(X_train_noFT),torch.Tensor(y_train).long()) 
         dst_test = TensorDataset(torch.Tensor(X_eval_noFT),torch.Tensor(y_eval).long()) 
+
+        classes_present = torch.unique(torch.Tensor(y_train).long())
 
     elif dataset in ['yahoo', 'dbpedia']:
         folder_path = os.path.join("gdrive/MyDrive/DL_Experiments/TextExperiments/data/new_data", dataset)
@@ -344,6 +348,7 @@ def get_dataset_embedding(dataset, data_path, silo=None, iid=True):
         dst_train = TensorDataset(x_train, y_train.long())
         dst_test = TensorDataset(x_test, y_test.long())
 
+        classes_present = torch.unique(y_train.long())    
         embedding_size = 768
         max_sentence_len = 1
         class_names =   [
@@ -385,7 +390,7 @@ def get_dataset_embedding(dataset, data_path, silo=None, iid=True):
 
     #batch size changed form 256 to 16
     testloader = torch.utils.data.DataLoader(dst_test, batch_size=16, shuffle=True,drop_last=True)
-    return embedding_size, num_classes, class_names, dst_train, dst_test, testloader
+    return embedding_size, classes_present, num_classes, class_names, dst_train, dst_test, testloader
 # if __name__ == '__main__':
 #     embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('SST2', "")
 

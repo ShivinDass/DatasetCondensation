@@ -57,7 +57,7 @@ def main():
 
     eval_it_pool = np.arange(0, args.Iteration+1, 2000).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
     print('eval_it_pool: ', eval_it_pool)
-    embedding_size, num_classes, class_names, dst_train, dst_test, testloader = get_dataset_embedding(args.dataset, args.data_path, silo=args.silo, iid=iid)
+    embedding_size, classes_present, num_classes, class_names, dst_train, dst_test, testloader = get_dataset_embedding(args.dataset, args.data_path, silo=args.silo, iid=iid)
     model_eval_pool = get_eval_pool(args.eval_mode, args.model, args.model)
     print("Classes obtained: {}".format(num_classes))
 
@@ -77,7 +77,7 @@ def main():
         ''' organize the real dataset '''
         data_all = []
         labels_all = []
-        indices_class = [[] for c in range(num_classes)]
+        indices_class = [[] for c in range(num_classes) if c in classes_present]
 
         data_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
         labels_all = [dst_train[i][1] for i in range(len(dst_train))]
@@ -92,7 +92,8 @@ def main():
        
 
         for c in range(num_classes):
-            print('class c = %d: %d real data'%(c, len(indices_class[c])))
+            if(c in classes_present):
+                print('class c = %d: %d real data'%(c, len(indices_class[c])))
             
         
 
@@ -101,13 +102,16 @@ def main():
             return data_all[idx_shuffle]
 
         ''' initialize the synthetic data '''
-        data_syn = torch.randn(size=(num_classes*args.ipc, embedding_size), dtype=torch.float, requires_grad=True, device=args.device)
-        label_syn = torch.tensor([np.ones(args.ipc)*i for i in range(num_classes)], dtype=torch.long, requires_grad=False, device=args.device).view(-1) # [0,0,0, 1,1,1, ..., 9,9,9]
+        data_syn = torch.randn(size=(len(classes_present)*args.ipc, embedding_size), dtype=torch.float, requires_grad=True, device=args.device)
+        label_syn = torch.tensor([np.ones(args.ipc)*i for i in range(num_classes) if i in classes_present], dtype=torch.long, requires_grad=False, device=args.device).view(-1) # [0,0,0, 1,1,1, ..., 9,9,9]
 
         if args.init == 'real':
             print('initialize synthetic data from random real images')
+            count_class = 0
             for c in range(num_classes):
-                data_syn.data[c*args.ipc:(c+1)*args.ipc] = get_data_from_class(c, args.ipc).detach().data
+                if(c in classes_present):
+                    data_syn.data[count_class*args.ipc:(count_class+1)*args.ipc] = get_data_from_class(c, args.ipc).detach().data
+                    count_class += 1
         else:
             print('initialize synthetic data from random noise')
 
@@ -156,15 +160,18 @@ def main():
             loss_avg = 0
 
             ''' update synthetic data '''
+            count_class = 0
             loss = torch.tensor(0.0).to(args.device)
             for c in range(num_classes):
-                dt_real = get_data_from_class(c, args.batch_real)
-                dt_syn = data_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, embedding_size))
+                if(c in classes_present):
+                    dt_real = get_data_from_class(c, args.batch_real)
+                    dt_syn = data_syn[count_class*args.ipc:(count_class+1)*args.ipc].reshape((args.ipc, embedding_size))
 
-                output_real = embed(dt_real).detach()
-                output_syn = embed(dt_syn)
+                    output_real = embed(dt_real).detach()
+                    output_syn = embed(dt_syn)
 
-                loss += torch.sum((torch.mean(output_real, dim=0) - torch.mean(output_syn, dim=0))**2)
+                    loss += torch.sum((torch.mean(output_real, dim=0) - torch.mean(output_syn, dim=0))**2)
+                    count_class += 1
 
             optimizer_data.zero_grad()
             loss.backward()
@@ -172,7 +179,7 @@ def main():
             loss_avg += loss.item()
 
 
-            loss_avg /= (num_classes)
+            loss_avg /= len(classes_present)
 
             if it%10 == 0:
                 print('%s iter = %05d, loss = %.4f' % (get_time(), it, loss_avg))
