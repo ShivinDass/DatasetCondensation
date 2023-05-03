@@ -18,7 +18,7 @@ def set_seed(seed):
   np.random.seed(seed)
   torch.manual_seed(seed)
 
-def get_dataset(dataset, data_path, silo=None):
+def get_dataset(dataset, data_path, silo=None, iid=True):
     if dataset == 'dummy':
         embedding_size = 728
         max_sentence_len = 25
@@ -90,26 +90,29 @@ def get_dataset(dataset, data_path, silo=None):
         x_train = torch.tensor(np.array(train_data['text_embeddings']))
         y_train = torch.tensor(np.array(train_data['labels']))
 
-        length = y_train.size(dim=0)
-        classes = 10 if dataset == "yahoo" else 14
+        if silo >= 0:
+            length = y_train.size(dim=0)
+            classes = 10 if dataset == "yahoo" else 14
 
-        new_x_train = []
-        new_y_train = []
+            new_x_train = []
+            new_y_train = []
 
-        for i in range(classes):
-            idx = torch.where(y_train == i, 1, 0)
-            idx = torch.nonzero(idx)
-            samples_per_silo = idx.size(dim=0) // 10
-            start = samples_per_silo*silo
-            end = samples_per_silo*(silo+1)
-            idx_class = idx[start:end]
-            new_x_train.append(x_train[idx_class])
-            new_y_train.append(y_train[idx_class])
+            for i in range(classes):
+                idx = torch.where(y_train == i, 1, 0)
+                idx = torch.nonzero(idx)
+                samples_per_silo = idx.size(dim=0) // 10
+                start = samples_per_silo*silo
+                end = samples_per_silo*(silo+1)
+                idx_class = idx[start:end]
+                new_x_train.append(x_train[idx_class])
+                new_y_train.append(y_train[idx_class])
 
-        new_x_train = np.array(torch.cat(new_x_train, dim=0)).squeeze()
-        new_y_train = np.array(torch.cat(new_y_train, dim=0)).squeeze()
-        x_train = torch.tensor(new_x_train)
-        y_train = torch.tensor(new_y_train)
+            new_x_train = np.array(torch.cat(new_x_train, dim=0)).squeeze()
+            new_y_train = np.array(torch.cat(new_y_train, dim=0)).squeeze()
+            x_train = torch.tensor(new_x_train)
+            y_train = torch.tensor(new_y_train)
+        else:
+            print("Condensation on whole dataset.")
 
 
         
@@ -160,7 +163,7 @@ def get_dataset(dataset, data_path, silo=None):
     testloader = torch.utils.data.DataLoader(dst_test, batch_size=16, shuffle=True,drop_last=True)
     return embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader
 
-def get_dataset_embedding(dataset, data_path, silo=None):
+def get_dataset_embedding(dataset, data_path, silo=None, iid=True):
     if dataset == 'dummy':
         embedding_size = 728
         
@@ -251,32 +254,87 @@ def get_dataset_embedding(dataset, data_path, silo=None):
     elif dataset in ['yahoo', 'dbpedia']:
         folder_path = os.path.join("gdrive/MyDrive/DL_Experiments/TextExperiments/data/new_data", dataset)
 
+        print(folder_path)
         train_data = h5py.File(os.path.join(folder_path, 'processed_train.h5'), 'r')
         test_data =  h5py.File(os.path.join(folder_path, 'processed_test.h5'), 'r')
 
         x_train = torch.tensor(np.array(train_data['text_embeddings']))
         y_train = torch.tensor(np.array(train_data['labels']))
+        if dataset == "yahoo":
+            exp_results = torch.load('gdrive/MyDrive/DL_Experiments/TextExperiments/Federated_Learning/result/yahoo/whole/res_DM_yahoo_MLP_10ipc.pt', map_location = 'cpu')
+        else:
+            exp_results = torch.load('gdrive/MyDrive/DL_Experiments/TextExperiments/Federated_Learning/result/dbpedia/whole/res_DM_dbpedia_MLP_10ipc.pt', map_location = 'cpu')
 
-        length = y_train.size(dim=0)
-        classes = 10 if dataset == "yahoo" else 14
+        if silo >= 0:
+            length = y_train.size(dim=0)
+            classes = 10 if dataset == "yahoo" else 14
+            print("CLASSES: {}".format(classes))
 
-        new_x_train = []
-        new_y_train = []
+            new_x_train = []
+            new_y_train = []
 
-        for i in range(classes):
-            idx = torch.where(y_train == i, 1, 0)
-            idx = torch.nonzero(idx)
-            samples_per_silo = idx.size(dim=0) // 10
-            start = samples_per_silo*silo
-            end = samples_per_silo*(silo+1)
-            idx_class = idx[start:end]
-            new_x_train.append(x_train[idx_class])
-            new_y_train.append(y_train[idx_class])
+            if iid:
+                for i in range(classes):
+                    idx = torch.where(y_train == i, 1, 0)
+                    idx = torch.nonzero(idx)
+                    samples_per_silo = idx.size(dim=0) // 10
+                    start = samples_per_silo*silo
+                    end = samples_per_silo*(silo+1)
+                    idx_class = idx[start:end]
+                    new_x_train.append(x_train[idx_class])
+                    new_y_train.append(y_train[idx_class])
+            else:
+                print("Non iid partition - v2")
+                """
+                x_train_split = [[] for i in range(classes)]
+                y_train_split = [[] for i in range(classes)]
+                for i in range(classes):
+                    x_train_class = x_train[y_train == i]
+                    y_train_class = y_train[y_train == i]
+                    centers = exp_results['data'][0][0][exp_results['data'][0][1] == i]
+                    distances = torch.cdist(x_train_class, centers)
+                    closest_centers = torch.argmin(distances, dim=1)
+                    for j in range(classes):
+                        x_train_split[j].append(x_train_class[closest_centers == j])
+                        y_train_split[j].append(y_train_class[closest_centers == j])
+                
+                new_x_train = x_train_split[silo]
+                new_y_train = y_train_split[silo]
+                """
+                num_classes = classes
+                num_silos = 10 ## Equal to num silos
+                x_train_split = [[] for i in range(num_silos)]
+                y_train_split = [[] for i in range(num_silos)]
+                shards_per_class = 2
+                shards_per_silo = (shards_per_class * num_classes)//num_silos
+                order = [i//shards_per_silo for i in range(num_silos * shards_per_silo)]
+                order = random.sample(order, k = num_silos * shards_per_silo)
 
-        new_x_train = np.array(torch.cat(new_x_train, dim=0)).squeeze()
-        new_y_train = np.array(torch.cat(new_y_train, dim=0)).squeeze()
-        x_train = torch.tensor(new_x_train)
-        y_train = torch.tensor(new_y_train)
+                count = 0
+                for i in range(num_classes):
+                    x_train_class = x_train[y_train == i]
+                    y_train_class = y_train[y_train == i]
+                    x_train_class_split = torch.chunk(x_train_class, shards_per_class, dim=0)
+                    y_train_class_split = torch.chunk(y_train_class, shards_per_class, dim=0)
+                    for i1 in range(len(x_train_class_split)):
+                        x_train_split[order[count]].append(x_train_class_split[i1])
+                        y_train_split[order[count]].append(y_train_class_split[i1])
+                        count += 1
+                new_x_train = x_train_split[silo]
+                new_y_train = y_train_split[silo]
+                #new_x_train = torch.tensor(new_x_train)
+                #new_y_train = torch.tensor(new_y_train)
+
+            if silo is None or silo < 0:
+                x_train = torch.tensor(x_train)
+                y_train = torch.tensor(y_train)
+            else:
+                new_x_train = np.array(torch.cat(new_x_train, dim=0)).squeeze()
+                new_y_train = np.array(torch.cat(new_y_train, dim=0)).squeeze()
+                x_train = torch.tensor(new_x_train)
+                y_train = torch.tensor(new_y_train)
+        else:
+            print("Condensation on whole dataset.")
 
 
         
@@ -300,7 +358,7 @@ def get_dataset_embedding(dataset, data_path, silo=None):
                             "Politics & Government"
                         ] if dataset == 'yahoo' else [
                             "Company",
-                            "EducationalInstitution"
+                            "EducationalInstitution",
                             "Artist",
                             "Athlete",
                             "OfficeHolder",
@@ -314,9 +372,11 @@ def get_dataset_embedding(dataset, data_path, silo=None):
                             "Film",
                             "WrittenWork"
                         ]
-
-        num_classes = len(class_names)
-
+        if iid:
+            num_classes = len(class_names)
+        else:
+            num_classes = len(class_names)
+            #num_classes = 2
         print("Train size:", len(x_train))
         print("Test size:", len(x_test))
 

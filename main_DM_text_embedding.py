@@ -31,6 +31,7 @@ def main():
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
     parser.add_argument('--dis_metric', type=str, default='ours', help='distance metric')
     parser.add_argument('--silo', type=int, default=0, help='silo number')
+    parser.add_argument('--iid', type=int, default=0, help='if 0 iid, if 1 non-iid')
 
     args = parser.parse_args()
     args.method = 'DM'
@@ -49,11 +50,16 @@ def main():
     if not os.path.exists(args.save_path):
         os.mkdir(args.save_path)
 
+    if args.iid == 0:
+        iid = True
+    else:
+        iid = False
+
     eval_it_pool = np.arange(0, args.Iteration+1, 2000).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
     print('eval_it_pool: ', eval_it_pool)
-    embedding_size, num_classes, class_names, dst_train, dst_test, testloader = get_dataset_embedding(args.dataset, args.data_path, silo=args.silo)
+    embedding_size, num_classes, class_names, dst_train, dst_test, testloader = get_dataset_embedding(args.dataset, args.data_path, silo=args.silo, iid=iid)
     model_eval_pool = get_eval_pool(args.eval_mode, args.model, args.model)
-
+    print("Classes obtained: {}".format(num_classes))
 
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
@@ -66,6 +72,7 @@ def main():
         print('\n================== Exp %d ==================\n '%exp)
         print('Hyper-parameters: \n', args.__dict__)
         print('Evaluation model pool: ', model_eval_pool)
+        print("len dst_train: {}".format(len(dst_train)))
 
         ''' organize the real dataset '''
         data_all = []
@@ -74,17 +81,20 @@ def main():
 
         data_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
         labels_all = [dst_train[i][1] for i in range(len(dst_train))]
-        # print(labels_all)
+        print(len(labels_all))
         for i, lab in enumerate(labels_all):
-            # print(lab)
+            #print(lab)
             indices_class[lab].append(i)
         data_all = torch.cat(data_all, dim=0).to(args.device)
         labels_all = torch.tensor(labels_all, dtype=torch.long, device=args.device)
 
 
+       
 
         for c in range(num_classes):
             print('class c = %d: %d real data'%(c, len(indices_class[c])))
+            
+        
 
         def get_data_from_class(c, n): # get random n images from class c
             idx_shuffle = np.random.permutation(indices_class[c])[:n]
@@ -168,6 +178,7 @@ def main():
                 print('%s iter = %05d, loss = %.4f' % (get_time(), it, loss_avg))
 
             if it == args.Iteration: # only record the final results
+                
                 data_save.append([copy.deepcopy(data_syn.detach().cpu()), copy.deepcopy(label_syn.detach().cpu())])
                 torch.save({'data': data_save, 'accs_all_exps': accs_all_exps, }, os.path.join(args.save_path, 'res_%s_%s_%s_%dipc.pt'%(args.method, args.dataset, args.model, args.ipc)))
 
