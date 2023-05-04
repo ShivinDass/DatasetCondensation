@@ -724,5 +724,8 @@ AUGMENT_FNS = {
 
 
 if __name__ == '__main__':
-    # embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('yahoo-flat', "")
-    encode_data('dbpedia-flat')
+    embedding_size, max_sentence_len, num_classes, class_names, dst_train, dst_test, testloader = get_dataset('SST1-transformer-flat', "")
+    # encode_data('dbpedia-flat')
+    print(torch.sum(dst_train.labels==0))
+    print(torch.sum(dst_train.labels==1))
+    print(dst_train.labels.shape)

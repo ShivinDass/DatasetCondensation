@@ -1,1 +1,3 @@
-python main_DM_text.py  --dataset SST2  --model LSTMNet  --ipc 25  --init real  --lr_img 1  --num_eval 5 --save_path result/SST2
+python main_DM_text.py  --dataset dbpedia-flat  --model MLP  --ipc 25  --init real  --lr_img 1  --num_eval 5 --save_path result/dbpedia-50-shallow1_wide512-model
+
+python CL_DM.py --data_path data --dataset yahoo/dbpedia --ipc 50
