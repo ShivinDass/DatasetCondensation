@@ -306,7 +306,7 @@ def get_dataset_embedding(dataset, data_path, silo=None, iid=True):
                 new_y_train = y_train_split[silo]
                 """
                 num_classes = classes
-                num_silos = 10 ## Equal to num silos
+                num_silos = num_classes ## Equal to num silos
                 x_train_split = [[] for i in range(num_silos)]
                 y_train_split = [[] for i in range(num_silos)]
                 shards_per_class = 2
