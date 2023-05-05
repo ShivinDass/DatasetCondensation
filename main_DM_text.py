@@ -9,7 +9,7 @@ import torch.nn as nn
 from torchvision.utils import save_image
 from utils_text import get_loops, get_dataset, get_network, get_eval_pool, evaluate_synset, get_daparam, match_loss, get_time, TensorDataset, epoch, DiffAugment, ParamDiffAug
 
-import wandb
+# import wandb
 
 def main():
 
@@ -38,11 +38,11 @@ def main():
     args.dsa_param = ParamDiffAug()
     args.dsa = False if ('dsa_strategy' not in args or args.dsa_strategy in ['none', 'None']) else True
 
-    run = wandb.init(
-        resume=args.dataset+f"_{args.save_path.split('/')[1]}",
-        project="text_condensation",
-        entity="clvr"
-    )
+    # run = wandb.init(
+    #     resume=args.dataset+f"_{args.save_path.split('/')[1]}",
+    #     project="text_condensation",
+    #     entity="clvr"
+    # )
 
     if not os.path.exists(args.data_path):
         os.mkdir(args.data_path)
@@ -128,7 +128,7 @@ def main():
                         _, acc_train, acc_test = evaluate_synset(it_eval, net_eval, data_syn_eval, label_syn_eval, testloader, args)
                         accs.append(acc_test)
                     print('Evaluate %d random %s, mean = %.4f std = %.4f\n-------------------------'%(len(accs), model_eval, np.mean(accs), np.std(accs)))
-                    wandb.log({"mean": np.mean(accs), "std": np.std(accs)})
+                    # wandb.log({"mean": np.mean(accs), "std": np.std(accs)})
 
                     if it == args.Iteration: # record the final results
                         accs_all_exps[model_eval] += accs
