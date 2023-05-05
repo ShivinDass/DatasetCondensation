@@ -181,32 +181,62 @@ def get_dataset(dataset, data_path):
 
         embedding_size = 768
         max_sentence_len = 1
-        class_names =   [
-                            "Society & Culture",
-                            "Science & Mathematics",
-                            "Health", "Education & Reference",
-                            "Computers & Internet",
-                            "Sports",
-                            "Business & Finance",
-                            "Entertainment & Music",
-                            "Family & Relationships",
-                            "Politics & Government"
-                        ] if 'yahoo' in dataset else [
-                            "Company",
-                            "EducationalInstitution",
-                            "Artist",
-                            "Athlete",
-                            "OfficeHolder",
-                            "MeanOfTransportation",
-                            "Building",
-                            "NaturalPlace",
-                            "Village",
-                            "Animal",
-                            "Plant",
-                            "Album",
-                            "Film",
-                            "WrittenWork"
-                        ]
+        
+        if 'yahoo' in dataset:
+            class_names =   [
+                                "Society & Culture",
+                                "Science & Mathematics",
+                                "Health", "Education & Reference",
+                                "Computers & Internet",
+                                "Sports",
+                                "Business & Finance",
+                                "Entertainment & Music",
+                                "Family & Relationships",
+                                "Politics & Government"
+                            ]
+        elif 'dbpedia' in dataset:
+            class_names =   [
+                                "Company",
+                                "EducationalInstitution",
+                                "Artist",
+                                "Athlete",
+                                "OfficeHolder",
+                                "MeanOfTransportation",
+                                "Building",
+                                "NaturalPlace",
+                                "Village",
+                                "Animal",
+                                "Plant",
+                                "Album",
+                                "Film",
+                                "WrittenWork"
+                            ]
+        else:
+            class_names = ['0', '1']
+
+        num_classes = len(class_names)
+
+        print("Train size:", len(x_train))
+        print("Test size:", len(x_test))
+    
+    elif dataset == 'imb-flat':
+         folder_path = os.path.join(os.environ['DATA_DIR'], dataset)
+
+        train_data = h5py.File(os.path.join(folder_path, 'processed_train.h5'), 'r')
+        test_data =  h5py.File(os.path.join(folder_path, 'processed_test.h5'), 'r')
+
+        x_train = torch.tensor(np.array(train_data['text_embeddings']))
+        y_train = torch.tensor(np.array(train_data['labels']))
+        
+        x_test = torch.tensor(np.array(test_data['text_embeddings']))
+        y_test = torch.clamp(torch.tensor(np.array(test_data['labels'])), min=0, max=1) 
+
+        dst_train = TensorDataset(x_train, y_train.long())
+        dst_test = TensorDataset(x_test, y_test.long())
+
+        embedding_size = 768
+        max_sentence_len = 1
+        class_names = ['0', '1']
 
         num_classes = len(class_names)
 
